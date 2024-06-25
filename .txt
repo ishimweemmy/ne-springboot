@@ -1,0 +1,509 @@
+As a java developer, you have been hired to develop the Backend of the Banking System described with these minimum features:
+1. Manage clients by registering their details.
+    Customer (id, firstName, lastName, email, mobile, dob, account, balance, lastUpdateDateTime)
+2. Saving management Banking (id, customer, account, amount, type(saving), bankingDateTime)
+3. Withdraw Management Banking (id, customer, account, amount, type(Withdraw), bankingDateTime)
+4. Enable a Customer to perform a transfter (Saving) of a given amount to another Customer account.
+    Banking (id, customer, account, amount, type(transfer), bankingDateTime)
+5. Update a customer account on each saving(+) and withdraw (-) transactions.
+6. On each Saving and withdraw send an email to the Customer Dear <CUSTOMER NAMES> your <SAVING/WITHDRAW> of <AMOUNT> on your account <ACCOUNT> has been completed successfully.
+7. Use a trigger to register the message sent to each customer based on each transaction.
+    In the message table : Message(id, customer, message, dateTime)
+
+All the possible APIs (get) should be paginated. All the models should be validated. Add features that you think are neccessary.
+
+* Here is the current User model and other user related stuffs. The Customer is also required to login inorder to perform customer operations, like withdraw etc.
+    package com.ishimweemmy.templates.springboot.v1.models;
+
+    import com.fasterxml.jackson.annotation.JsonIgnore;
+    import com.ishimweemmy.templates.springboot.v1.audits.TimestampAudit;
+    import com.ishimweemmy.templates.springboot.v1.enums.EGender;
+    import com.ishimweemmy.templates.springboot.v1.enums.EUserStatus;
+    import jakarta.persistence.*;
+    import jakarta.validation.constraints.NotBlank;
+    import lombok.*;
+    import org.hibernate.annotations.OnDelete;
+    import org.hibernate.annotations.OnDeleteAction;
+
+    import java.time.LocalDateTime;
+    import java.util.HashSet;
+    import java.util.Set;
+    import java.util.UUID;
+
+
+    @Getter
+    @Setter
+    @ToString
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Entity
+    @Table(name = "users", uniqueConstraints = {@UniqueConstraint(columnNames = {"email"}), @UniqueConstraint(columnNames = {"telephone"})})
+    public class User extends TimestampAudit {
+        @Id
+        @GeneratedValue(strategy = GenerationType.AUTO)
+        @Column(name = "id")
+        private UUID id;
+
+
+        @NotBlank
+        @Column(name = "email")
+        private String email;
+
+        @Column(name = "first_name")
+        private String firstName;
+
+        @Column(name = "last_name")
+        private String lastName;
+
+        @Column(name = "telephone")
+        private String telephone;
+
+        @JsonIgnore
+        @NotBlank
+        @Column(name = "password")
+        private String password;
+
+        @Enumerated(EnumType.STRING)
+        @Column(name = "gender")
+        private EGender gender;
+
+        @JoinColumn(name = "profile_image_id")
+        @OneToOne(cascade = CascadeType.ALL)
+        @OnDelete(action = OnDeleteAction.CASCADE)
+        private File profileImage;
+
+        @Column(name = "activation_code")
+        private String activationCode;
+
+        @Enumerated(EnumType.STRING)
+        @Column(name = "status")
+        private EUserStatus status = EUserStatus.PENDING;
+
+        @JsonIgnore
+        @Column(name = "activation_code_expires_at")
+        private LocalDateTime activationCodeExpiresAt;
+
+        @ManyToMany(fetch = FetchType.EAGER)
+        @JoinTable(name = "user_roles", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "role_id"))
+        private Set<Role> roles = new HashSet<>();
+
+        public String getFullName() {
+            return this.firstName + " " + this.lastName;
+        }
+
+        public User(String email, String firstName, String lastName, String telephone, EGender gender, String password) {
+            this.email = email;
+            this.firstName = firstName;
+            this.lastName = lastName;
+            this.telephone = telephone;
+            this.gender = gender;
+            this.password = password;
+        }
+    }
+
+    package com.ishimweemmy.templates.springboot.v1.models;
+
+
+    import com.ishimweemmy.templates.springboot.v1.enums.ERole;
+    import jakarta.persistence.*;
+    import lombok.Getter;
+    import lombok.NoArgsConstructor;
+    import lombok.Setter;
+    import lombok.ToString;
+
+    import java.util.UUID;
+
+    @Getter
+    @Setter
+    @ToString
+    @NoArgsConstructor
+    @Entity
+    @Table(name = "roles")
+    public class Role {
+        @Id
+        @GeneratedValue(strategy = GenerationType.AUTO)
+        @Column(name="id")
+        private UUID id;
+
+        @Enumerated(EnumType.STRING)
+        @Column(name="name")
+        private ERole name;
+
+        @Column(name="description")
+        private String description;
+
+        public Role(ERole name, String description) {
+            this.name = name;
+            this.description = description;
+        }
+    }
+
+
+    package com.ishimweemmy.templates.springboot.v1.repositories;
+
+    import com.ishimweemmy.templates.springboot.v1.enums.ERole;
+    import com.ishimweemmy.templates.springboot.v1.models.User;
+    import org.springframework.data.domain.Page;
+    import org.springframework.data.domain.Pageable;
+    import org.springframework.data.jpa.repository.JpaRepository;
+    import org.springframework.data.jpa.repository.Query;
+    import org.springframework.stereotype.Repository;
+
+    import java.util.Optional;
+    import java.util.UUID;
+
+    @Repository
+    public interface IUserRepository extends JpaRepository<User, UUID> {
+
+        Optional<User> findById(UUID userID);
+
+        Optional<User> findByEmail(String email);
+
+        Page<User> findByRoles(Pageable pageable, ERole role);
+
+        Optional<User> findByActivationCode(String activationCode);
+
+        @Query("SELECT u FROM User u" +
+                " WHERE (lower(u.firstName)  LIKE ('%' || lower(:searchKey) || '%')) " +
+                " OR (lower(u.lastName) LIKE ('%' || lower(:searchKey) || '%')) " +
+                " OR (lower(u.email) LIKE ('%' || lower(:searchKey) || '%'))")
+        Page<User> searchUser(Pageable pageable, String searchKey);
+    }
+
+    package com.ishimweemmy.templates.springboot.v1.serviceImpls;
+
+    import com.ishimweemmy.templates.springboot.v1.payload.request.UpdateUserDTO;
+    import com.ishimweemmy.templates.springboot.v1.enums.ERole;
+    import com.ishimweemmy.templates.springboot.v1.enums.EUserStatus;
+    import com.ishimweemmy.templates.springboot.v1.exceptions.BadRequestException;
+    import com.ishimweemmy.templates.springboot.v1.exceptions.ResourceNotFoundException;
+    import com.ishimweemmy.templates.springboot.v1.models.File;
+    import com.ishimweemmy.templates.springboot.v1.standalone.FileStorageService;
+    import com.ishimweemmy.templates.springboot.v1.models.User;
+    import com.ishimweemmy.templates.springboot.v1.repositories.IUserRepository;
+    import com.ishimweemmy.templates.springboot.v1.services.IFileService;
+    import com.ishimweemmy.templates.springboot.v1.services.IUserService;
+    import com.ishimweemmy.templates.springboot.v1.utils.Utility;
+    import lombok.RequiredArgsConstructor;
+    import org.springframework.dao.DataIntegrityViolationException;
+    import org.springframework.data.domain.Page;
+    import org.springframework.data.domain.Pageable;
+    import org.springframework.security.core.context.SecurityContextHolder;
+    import org.springframework.security.core.userdetails.UserDetails;
+    import org.springframework.stereotype.Service;
+
+    import java.util.Optional;
+    import java.util.UUID;
+
+    @Service
+    @RequiredArgsConstructor
+    public class UserServiceImpl implements IUserService {
+
+        private final IUserRepository userRepository;
+        private final IFileService fileService;
+        private final FileStorageService fileStorageService;
+
+        @Override
+        public Page<User> getAll(Pageable pageable) {
+            return this.userRepository.findAll(pageable);
+        }
+
+        @Override
+        public User getById(UUID id) {
+            return this.userRepository.findById(id).orElseThrow(
+                    () -> new ResourceNotFoundException("User", "id", id.toString()));
+        }
+
+        @Override
+        public User create(User user) {
+            try {
+                Optional<User> userOptional = this.userRepository.findByEmail(user.getEmail());
+                if (userOptional.isPresent())
+                    throw new BadRequestException(String.format("User with email '%s' already exists", user.getEmail()));
+                return this.userRepository.save(user);
+            } catch (DataIntegrityViolationException ex) {
+                String errorMessage = Utility.getConstraintViolationMessage(ex, user);
+                throw new BadRequestException(errorMessage, ex);
+            }
+        }
+
+        @Override
+        public User save(User user) {
+            try {
+                return this.userRepository.save(user);
+            } catch (DataIntegrityViolationException ex) {
+                String errorMessage = Utility.getConstraintViolationMessage(ex, user);
+                throw new BadRequestException(errorMessage, ex);
+            }
+        }
+
+        @Override
+        public User update(UUID id, UpdateUserDTO dto) {
+            User entity = this.userRepository.findById(id).orElseThrow(
+                    () -> new ResourceNotFoundException("User", "id", id.toString()));
+
+            Optional<User> userOptional = this.userRepository.findByEmail(dto.getEmail());
+            if (userOptional.isPresent() && (userOptional.get().getId() != entity.getId()))
+                throw new BadRequestException(String.format("User with email '%s' already exists", entity.getEmail()));
+
+            entity.setEmail(dto.getEmail());
+            entity.setFirstName(dto.getFirstName());
+            entity.setLastName(dto.getLastName());
+            entity.setTelephone(dto.getTelephone());
+            entity.setGender(dto.getGender());
+
+            return this.userRepository.save(entity);
+        }
+
+        @Override
+        public boolean delete(UUID id) {
+            this.userRepository.findById(id).orElseThrow(() ->
+                    new ResourceNotFoundException("User", "id", id));
+
+            this.userRepository.deleteById(id);
+            return true;
+        }
+
+        @Override
+        public Page<User> getAllByRole(Pageable pageable, ERole role) {
+            return this.userRepository.findByRoles(pageable, role);
+        }
+
+        @Override
+        public Page<User> searchUser(Pageable pageable, String searchKey) {
+            return this.userRepository.searchUser(pageable, searchKey);
+        }
+
+        @Override
+        public User getLoggedInUser() {
+            String email;
+            Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+            if (principal instanceof UserDetails) {
+                email = ((UserDetails) principal).getUsername();
+            } else {
+                email = principal.toString();
+            }
+
+            return userRepository.findByEmail(email).orElseThrow(
+                    () -> new ResourceNotFoundException("User", "id", email));
+        }
+
+        @Override
+        public User getByEmail(String email) {
+            return this.userRepository.findByEmail(email).orElseThrow(
+                    () -> new ResourceNotFoundException("User", "id", email));
+        }
+
+
+        @Override
+        public User changeStatus(UUID id, EUserStatus status) {
+            User entity = this.userRepository.findById(id).orElseThrow(
+                    () -> new ResourceNotFoundException("User", "id", id.toString()));
+
+            entity.setStatus(status);
+
+            return this.userRepository.save(entity);
+        }
+
+        @Override
+        public User changeProfileImage(UUID id, File file) {
+            User entity = this.userRepository.findById(id).orElseThrow(
+                    () -> new ResourceNotFoundException("Document", "id", id.toString()));
+            File existingFile = entity.getProfileImage();
+            if (existingFile != null) {
+                this.fileStorageService.removeFileOnDisk(existingFile.getPath());
+            }
+            entity.setProfileImage(file);
+            return this.userRepository.save(entity);
+
+        }
+
+        @Override
+        public User removeProfileImage(UUID id) {
+            User user = this.userRepository.findById(id).orElseThrow(
+                    () -> new ResourceNotFoundException("User", "id", id.toString()));
+            File file = user.getProfileImage();
+            if (file != null) {
+                this.fileService.delete(file.getId());
+            }
+            user.setProfileImage(null);
+            return this.userRepository.save(user);
+        }
+
+        @Override
+        public Optional<User> findByActivationCode(String activationCode) {
+            return this.userRepository.findByActivationCode(activationCode);
+        }
+    }
+
+
+    package com.ishimweemmy.templates.springboot.v1.services;
+
+    import com.ishimweemmy.templates.springboot.v1.enums.ERole;
+    import com.ishimweemmy.templates.springboot.v1.enums.EUserStatus;
+    import com.ishimweemmy.templates.springboot.v1.models.File;
+    import com.ishimweemmy.templates.springboot.v1.models.User;
+    import com.ishimweemmy.templates.springboot.v1.payload.request.UpdateUserDTO;
+    import org.springframework.data.domain.Page;
+    import org.springframework.data.domain.Pageable;
+
+    import java.util.Optional;
+    import java.util.UUID;
+
+
+    public interface IUserService {
+
+        Page<User> getAll(Pageable pageable);
+
+        User getById(UUID id);
+
+        User create(User user);
+        User save(User user);
+
+        User update(UUID id, UpdateUserDTO dto);
+
+        boolean delete(UUID id);
+
+        Page<User> getAllByRole(Pageable pageable, ERole role);
+
+        Page<User> searchUser(Pageable pageable, String searchKey);
+
+        User getLoggedInUser();
+
+        User getByEmail(String email);
+
+        User changeStatus(UUID id, EUserStatus status);
+
+        User changeProfileImage(UUID id, File file);
+
+        User removeProfileImage(UUID id);
+
+        Optional<User> findByActivationCode(String verificationCode);
+
+    }
+
+    package com.ishimweemmy.templates.springboot.v1.standalone;
+
+import com.ishimweemmy.templates.springboot.v1.exceptions.AppException;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.stereotype.Service;
+import org.thymeleaf.context.Context;
+import org.thymeleaf.spring6.SpringTemplateEngine;
+
+import java.time.LocalDate;
+
+    @Service
+    @RequiredArgsConstructor
+    public class MailService {
+
+        private final JavaMailSender mailSender;
+
+        private final SpringTemplateEngine templateEngine;
+
+        @Value("${app.frontend.reset-password}")
+        private String resetPasswordUrl;
+
+        @Value("${app.frontend.support-email}")
+        private String supportEmail;
+
+
+        public void sendResetPasswordMail(String to, String fullName, String resetCode) {
+            try {
+                MimeMessage message = this.mailSender.createMimeMessage();
+
+                MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+                Context context = new Context();
+                context.setVariable("fullName", fullName);
+                context.setVariable("resetCode", resetCode);
+                context.setVariable("resetUrl", resetPasswordUrl);
+                context.setVariable("supportEmail", supportEmail);
+                context.setVariable("currentYear", LocalDate.now().getYear());
+
+                String htmlContent = templateEngine.process("forgot-password-email", context);
+
+                helper.setTo(to);
+                helper.setSubject("Password Reset Request");
+                helper.setText(htmlContent, true);
+
+                this.mailSender.send(message);
+            } catch (MessagingException e) {
+                throw new AppException("Error sending email", e);
+            }
+        }
+
+        public void sendActivateAccountEmail(String to, String fullName, String verificationCode) {
+            try {
+                MimeMessage message = this.mailSender.createMimeMessage();
+
+                MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+                Context context = new Context();
+                context.setVariable("fullName", fullName);
+                context.setVariable("verificationCode", verificationCode);
+                context.setVariable("resetUrl", resetPasswordUrl);
+                context.setVariable("supportEmail", supportEmail);
+                context.setVariable("currentYear", LocalDate.now().getYear());
+
+                String htmlContent = templateEngine.process("verify-account-email", context);
+
+                helper.setTo(to);
+                helper.setSubject("Account activation Request");
+                helper.setText(htmlContent, true);
+
+                this.mailSender.send(message);
+            } catch (MessagingException e) {
+                throw new AppException("Error sending email", e);
+            }
+        }
+
+        public void sendAccountVerifiedSuccessfullyEmail(String to, String fullName) {
+            try {
+                MimeMessage message = this.mailSender.createMimeMessage();
+                MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+                Context context = new Context();
+                context.setVariable("fullName", fullName);
+                context.setVariable("supportEmail", supportEmail);
+                context.setVariable("currentYear", LocalDate.now().getYear());
+
+                String htmlContent = templateEngine.process("account-verification-successful", context);
+
+                helper.setTo(to);
+                helper.setSubject("Account Verification Successful");
+                helper.setText(htmlContent, true);
+
+                this.mailSender.send(message);
+            } catch (MessagingException e) {
+                throw new AppException("Error sending message", e);
+            }
+        }
+
+        public void sendPasswordResetSuccessfully(String to, String fullName) {
+            try {
+                MimeMessage message = this.mailSender.createMimeMessage();
+                MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+                Context context = new Context();
+                context.setVariable("fullName", fullName);
+                context.setVariable("supportEmail", supportEmail);
+                context.setVariable("currentYear", LocalDate.now().getYear());
+
+                String htmlContent = templateEngine.process("password-reset-successful", context);
+
+                helper.setTo(to);
+                helper.setSubject("Account Rejected");
+                helper.setText(htmlContent, true);
+
+                this.mailSender.send(message);
+            } catch (MessagingException e) {
+                throw new AppException("Error sending message", e);
+            }
+        }
+    }
