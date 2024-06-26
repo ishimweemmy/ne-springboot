@@ -3,9 +3,6 @@ package com.ishimweemmy.templates.springboot.v1.models;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-import org.hibernate.annotations.OnDelete;
-import org.hibernate.annotations.OnDeleteAction;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -15,6 +12,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -27,25 +26,26 @@ import lombok.NoArgsConstructor;
 public class Banking {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "id")
+    @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id")
-    @OnDelete(action = OnDeleteAction.CASCADE)
+    @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "account_id")
-    @OnDelete(action = OnDeleteAction.CASCADE)
+    @JoinColumn(name = "account_id", nullable = false)
     private Account account;
 
-    @Column(name = "amount")
+    @NotNull(message = "Amount is required")
+    @Column(name = "amount", nullable = false)
     private double amount;
 
-    @Column(name = "type")
+    @NotBlank(message = "Type is required")
+    @Column(name = "type", nullable = false)
     private String type;
 
-    @Column(name = "banking_date_time")
+    @NotNull(message = "Banking date and time are required")
+    @Column(name = "banking_date_time", nullable = false)
     private LocalDateTime bankingDateTime;
 }

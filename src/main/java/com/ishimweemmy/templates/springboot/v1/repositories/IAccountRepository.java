@@ -1,5 +1,6 @@
 package com.ishimweemmy.templates.springboot.v1.repositories;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,4 +10,5 @@ import com.ishimweemmy.templates.springboot.v1.models.Account;
 
 @Repository
 public interface IAccountRepository extends JpaRepository<Account, UUID> {
+  Optional<Account> findByAccountNumber(String accountNumber);
 }

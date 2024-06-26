@@ -31,19 +31,18 @@ import lombok.NoArgsConstructor;
 public class Account {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(name = "id")
+    @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
 
-    @NotBlank
-    @Column(name = "account_number", unique = true)
+    @NotBlank(message = "Account number is required")
+    @Column(name = "account_number", unique = true, nullable = false)
     private String accountNumber;
 
-    @Column(name = "balance")
+    @Column(name = "balance", nullable = false)
     private double balance;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "customer_id")
-    @OnDelete(action = OnDeleteAction.CASCADE)
+    @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
     @OneToMany(mappedBy = "account", cascade = CascadeType.ALL, fetch = FetchType.LAZY)

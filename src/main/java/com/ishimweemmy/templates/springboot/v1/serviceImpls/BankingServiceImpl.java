@@ -13,6 +13,8 @@ import com.ishimweemmy.templates.springboot.v1.services.IBankingService;
 import com.ishimweemmy.templates.springboot.v1.standalone.MailService;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,89 +25,129 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BankingServiceImpl implements IBankingService {
 
-    private final IBankingRepository bankingRepository;
-    private final IAccountRepository accountRepository;
-    private final ICustomerRepository customerRepository;
-    private final IMessageRepository messageRepository;
-    private final MailService mailService;
+        private final IBankingRepository bankingRepository;
+        private final IAccountRepository accountRepository;
+        private final ICustomerRepository customerRepository;
+        private final IMessageRepository messageRepository;
+        private final MailService mailService;
 
-    @Override
-    @Transactional
-    public Banking createTransaction(Banking banking) {
-        Account account = accountRepository.findById(banking.getAccount().getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Account", "id", banking.getAccount().getId()));
-
-        switch (banking.getType()) {
-            case "withdraw":
-                withdrawFromAccount(account, banking.getAmount());
-                break;
-            case "deposit":
-                depositToAccount(account, banking.getAmount());
-                break;
-            case "transfer-out":
-                transferFromAccount(account, banking.getAmount());
-                break;
-            case "transfer-in":
-                transferToAccount(account, banking.getAmount());
-                break;
-            default:
-                throw new IllegalArgumentException("Invalid banking type");
+        @Override
+        public Account getAccountByAccountNumber(String accountNumber) {
+                return accountRepository.findByAccountNumber(accountNumber)
+                                .orElseThrow(() -> new ResourceNotFoundException("Account", "account number",
+                                                accountNumber));
         }
 
-        accountRepository.save(account);
-        banking.setBankingDateTime(LocalDateTime.now());
-        return bankingRepository.save(banking);
-    }
+        @Override
+        @Transactional
+        public Banking withdrawFromAccount(String accountNumber, double amount) {
+                Account account = getAccountByAccountNumber(accountNumber);
 
-    @Transactional
-    public void withdrawFromAccount(Account account, double amount) {
-        if (account.getBalance() < amount) {
-            throw new IllegalArgumentException("Insufficient balance for withdrawal");
+                if (account.getBalance() < amount) {
+                        throw new IllegalArgumentException("Insufficient balance for withdrawal");
+                }
+
+                account.setBalance(account.getBalance() - amount);
+                Banking banking = new Banking(UUID.randomUUID(), account.getCustomer(), account, amount, "withdraw",
+                                LocalDateTime.now());
+                bankingRepository.save(banking);
+                saveMessage(account.getCustomer().getId(),
+                                "Withdrawal of " + amount + " FRW from your account " + account.getAccountNumber()
+                                                + " has been completed successfully! Your new balance is "
+                                                + account.getBalance() + " FRW.");
+
+                return banking;
         }
-        account.setBalance(account.getBalance() - amount);
-        Banking banking = new Banking(UUID.randomUUID(), account.getCustomer(), account, amount, "withdraw",
-                LocalDateTime.now());
-        bankingRepository.save(banking);
-        saveMessage(account.getCustomer().getId(),
-                "Withdrawal of " + amount + " from account " + account.getAccountNumber());
-    }
 
-    @Transactional
-    public void depositToAccount(Account account, double amount) {
-        account.setBalance(account.getBalance() + amount);
-        Banking banking = new Banking(UUID.randomUUID(), account.getCustomer(), account, amount, "deposit",
-                LocalDateTime.now());
-        bankingRepository.save(banking);
-        saveMessage(account.getCustomer().getId(),
-                "Deposit of " + amount + " to account " + account.getAccountNumber());
-    }
+        @Override
+        @Transactional
+        public Banking depositToAccount(String accountNumber, double amount) {
+                Account account = getAccountByAccountNumber(accountNumber);
+                System.out.println(account);
+                account.setBalance(account.getBalance() + amount);
+                Banking banking = new Banking(UUID.randomUUID(), account.getCustomer(), account, amount, "deposit",
+                                LocalDateTime.now());
+                bankingRepository.save(banking);
+                saveMessage(account.getCustomer().getId(),
+                                "Deposit of " + amount + " FRW to your account " + account.getAccountNumber()
+                                                + " has been completed successfully! Your new balance is "
+                                                + account.getBalance() + " FRW.");
 
-    @Transactional
-    public void transferFromAccount(Account fromAccount, double amount) {
-        if (fromAccount.getBalance() < amount) {
-            throw new IllegalArgumentException("Insufficient balance for transfer");
+                return banking;
         }
-        fromAccount.setBalance(fromAccount.getBalance() - amount);
-        Banking banking = new Banking(UUID.randomUUID(), fromAccount.getCustomer(), fromAccount, amount, "transfer-out",
-                LocalDateTime.now());
-        bankingRepository.save(banking);
-    }
 
-    @Transactional
-    public void transferToAccount(Account toAccount, double amount) {
-        toAccount.setBalance(toAccount.getBalance() + amount);
-        Banking banking = new Banking(UUID.randomUUID(), toAccount.getCustomer(), toAccount, amount, "transfer-in",
-                LocalDateTime.now());
-        bankingRepository.save(banking);
-    }
+        @Override
+        @Transactional
+        public Banking transferAmount(String fromAccountNumber, String toAccountNumber, double amount) {
+                Account fromAccount = getAccountByAccountNumber(fromAccountNumber);
+                Account toAccount = getAccountByAccountNumber(toAccountNumber);
 
-    @Override
-    public void saveMessage(UUID customerId, String message) {
-        Customer customer = customerRepository.findById(customerId)
-                .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", customerId));
-        Message msg = new Message(UUID.randomUUID(), customer, message, LocalDateTime.now());
-        messageRepository.save(msg);
-        mailService.sendTransactionMail(customerId.toString(), customer.getFirstName() + " " + customer.getLastName(),
-                message);
-    }
+                if (fromAccount.getBalance() < amount) {
+                        throw new IllegalArgumentException("Insufficient balance for transfer");
+                }
+
+                fromAccount.setBalance(fromAccount.getBalance() - amount);
+                toAccount.setBalance(toAccount.getBalance() + amount);
+
+                Banking fromBanking = new Banking(UUID.randomUUID(), fromAccount.getCustomer(), fromAccount, amount,
+                                "transfer-out",
+                                LocalDateTime.now());
+                Banking toBanking = new Banking(UUID.randomUUID(), toAccount.getCustomer(), toAccount, amount,
+                                "transfer-in",
+                                LocalDateTime.now());
+
+                bankingRepository.save(fromBanking);
+                bankingRepository.save(toBanking);
+
+                saveMessage(fromAccount.getCustomer().getId(),
+                                "Transfer of " + amount + " FRW from your account " + fromAccount.getAccountNumber()
+                                                + " to account " + toAccount.getAccountNumber()
+                                                + " has been completed successfully! Your new balance is "
+                                                + fromAccount.getBalance() + " FRW.");
+                saveMessage(toAccount.getCustomer().getId(),
+                                "Transfer of " + amount + " FRW to your account " + toAccount.getAccountNumber()
+                                                + " from account " + fromAccount.getAccountNumber()
+                                                + " has been completed successfully! Your new balance is "
+                                                + toAccount.getBalance() + " FRW.");
+
+                return fromBanking;
+        }
+
+        @Override
+        public void saveMessage(UUID customerId, String message) {
+                Customer customer = customerRepository.findById(customerId)
+                                .orElseThrow(() -> new ResourceNotFoundException("Customer", "id", customerId));
+                Message msg = new Message(UUID.randomUUID(), customer, message,
+                                LocalDateTime.now());
+                messageRepository.save(msg);
+                mailService.sendTransactionMail(customer.getEmail(),
+                                customer.getFirstName() + " " + customer.getLastName(),
+                                message);
+        }
+
+        @Override
+        public Banking getById(UUID id) {
+                return bankingRepository.findById(id)
+                                .orElseThrow(() -> new ResourceNotFoundException("Banking", "id", id));
+        }
+
+        @Override
+        public boolean delete(UUID id) {
+                boolean exists = bankingRepository.existsById(id);
+                if (!exists) {
+                        throw new ResourceNotFoundException("Banking", "id", id);
+                }
+                bankingRepository.deleteById(id);
+                return true;
+        }
+
+        @Override
+        public Page<Banking> getAll(Pageable pageable) {
+                return bankingRepository.findAll(pageable);
+        }
+
+        @Override
+        public Page<Banking> getTransactionsByAccountId(UUID accountId, Pageable pageable) {
+                return bankingRepository.findByAccountId(accountId, pageable);
+        }
 }

@@ -1,41 +1,66 @@
 package com.ishimweemmy.templates.springboot.v1.controllers;
 
-import com.ishimweemmy.templates.springboot.v1.models.Account;
-import com.ishimweemmy.templates.springboot.v1.models.Banking;
 import com.ishimweemmy.templates.springboot.v1.services.IBankingService;
+import com.ishimweemmy.templates.springboot.v1.utils.Constants;
+import com.ishimweemmy.templates.springboot.v1.payload.response.ApiResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/banking")
+@RequestMapping(path = "/api/v1/banking")
 @RequiredArgsConstructor
 public class BankingController {
 
     private final IBankingService bankingService;
 
-    @PostMapping("/transaction")
-    public ResponseEntity<Banking> createTransaction(@RequestBody Banking banking) {
-        Banking createdTransaction = bankingService.createTransaction(banking);
-        return new ResponseEntity<>(createdTransaction, HttpStatus.CREATED);
+    @PostMapping("/withdraw/{accountNumber}")
+    public ResponseEntity<ApiResponse> withdrawFromAccount(
+            @PathVariable String accountNumber, @RequestParam double amount) {
+        bankingService.withdrawFromAccount(accountNumber, amount);
+        return ResponseEntity.ok(ApiResponse.success("Withdrawal successful"));
     }
 
-    @PostMapping("/withdraw/{accountId}")
-    public ResponseEntity<String> withdrawFromAccount(@PathVariable UUID accountId, @RequestParam double amount) {
-        Account account = new Account();
-        account.setId(accountId);
-        bankingService.withdrawFromAccount(account, amount);
-        return ResponseEntity.ok("Withdrawal successful");
+    @PostMapping("/deposit/{accountNumber}")
+    public ResponseEntity<ApiResponse> depositToAccount(
+            @PathVariable String accountNumber, @RequestParam double amount) {
+        bankingService.depositToAccount(accountNumber, amount);
+        return ResponseEntity.ok(ApiResponse.success("Deposit successful"));
     }
 
-    @PostMapping("/deposit/{accountId}")
-    public ResponseEntity<String> depositToAccount(@PathVariable UUID accountId, @RequestParam double amount) {
-        Account account = new Account();
-        account.setId(accountId);
-        bankingService.depositToAccount(account, amount);
-        return ResponseEntity.ok("Deposit successful");
+    @PostMapping("/transfer")
+    public ResponseEntity<ApiResponse> transferAmount(
+            @RequestParam String fromAccountNumber,
+            @RequestParam String toAccountNumber,
+            @RequestParam double amount) {
+        bankingService.transferAmount(fromAccountNumber, toAccountNumber, amount);
+        return ResponseEntity.ok(ApiResponse.success("Transfer successful"));
+    }
+
+    @GetMapping("/transactions/{accountId}")
+    public ResponseEntity<ApiResponse> getTransactionsByAccountId(
+            @PathVariable UUID accountId,
+            @RequestParam(value = "page", defaultValue = Constants.DEFAULT_PAGE_NUMBER) int page,
+            @RequestParam(value = "size", defaultValue = Constants.DEFAULT_PAGE_SIZE) int limit) {
+        Pageable pageable = PageRequest.of(page, limit, Sort.Direction.ASC, "id");
+
+        return ResponseEntity.ok(ApiResponse.success("Transactions fetched successfully",
+                bankingService.getTransactionsByAccountId(accountId, pageable)));
+    }
+
+    @GetMapping("/transactions")
+    public ResponseEntity<ApiResponse> getTransactions(
+            @RequestParam(value = "page", defaultValue = Constants.DEFAULT_PAGE_NUMBER) int page,
+            @RequestParam(value = "size", defaultValue = Constants.DEFAULT_PAGE_SIZE) int limit) {
+        Pageable pageable = PageRequest.of(page, limit, Sort.Direction.ASC, "id");
+
+        return ResponseEntity.ok(ApiResponse.success("Transactions fetched successfully",
+                bankingService.getAll(pageable)));
     }
 }
